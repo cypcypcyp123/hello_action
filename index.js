@@ -1,90 +1,48 @@
 const core = require("@actions/core");
 const axios = require("axios");
 const simpleGit = require("simple-git");
-const getBaseVersion = require("./get-base-version");
+const { getVersionType, getBaseVersion } = require("./get-base-version");
 
-// 计算新标签
 async function calculateTag(baseVersion, versionType) {
 	const git = simpleGit();
 	const tags = await git.tags();
 	const pattern = new RegExp(`^${baseVersion}-${versionType}\\.(\\d+)$`);
 
-	const matchedTags = tags.all
-		.filter((tag) => pattern.test(tag))
-		.map((tag) => parseInt(tag.match(pattern)[1]))
-		.sort((a, b) => b - a);
+	const lastNumber =
+		tags.all
+			.filter((tag) => pattern.test(tag))
+			.map((tag) => parseInt(tag.match(pattern)[1]))
+			.sort((a, b) => b - a)[0] || 0;
 
-	return `${baseVersion}-${versionType}.${matchedTags[0] + 1 || 1}`;
-}
-
-// 验证标签是否同步到服务器
-async function verifyTagOnServer(
-	tagName,
-	giteaServer,
-	giteaToken,
-	maxAttempts = 5
-) {
-	const apiUrl = `${giteaServer}/api/v1/repos/base/sc-ui/git/refs/tags/${encodeURIComponent(
-		tagName
-	)}`;
-
-	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-		try {
-			await axios.get(apiUrl, {
-				headers: { Authorization: `Bearer ${giteaToken}` },
-				timeout: 5000,
-			});
-			return true;
-		} catch (error) {
-			if (attempt < maxAttempts) {
-				const delay = Math.pow(2, attempt) * 1000;
-				core.info(`🔄 等待标签同步 (${delay}ms)`);
-				await new Promise((resolve) => setTimeout(resolve, delay));
-			} else {
-				throw new Error(`标签同步失败: ${error.message}`);
-			}
-		}
-	}
+	return `${baseVersion}-${versionType}.${lastNumber + 1}`;
 }
 
 async function run() {
 	try {
-		// 获取所有输入
-		const versionType = core.getInput("version-type");
+		// 解析输入
+		const versionData = JSON.parse(core.getInput("version-data"));
 		const giteaToken = core.getInput("GITEA_TOKEN");
 		const giteaServer = core.getInput("GITEA_SERVER");
-		const workflowFile = core.getInput("workflow-file");
 
-		// 解析版本数据
-		const versionData = JSON.parse(core.getInput("version-data"));
-		if (!versionData[versionType]) {
-			throw new Error(`版本类型 ${versionType} 不存在于输入数据`);
-		}
-
-		// 获取基础版本
+		// 自动确定版本类型
+		const versionType = getVersionType(versionData);
 		const baseVersion = getBaseVersion(versionData);
-		core.info(`✅ 基础版本: ${baseVersion}`);
 
-		// 计算新标签
+		core.info(`🔍 自动识别: ${versionType} 版本`);
+		core.info(`🔄 基础版本: ${baseVersion}`);
+
+		// 计算并创建标签
 		const newTag = await calculateTag(baseVersion, versionType);
-		core.info(`✅ 新标签: ${newTag}`);
-
-		// 创建并推送标签
 		const git = simpleGit();
 		await git.addAnnotatedTag(newTag, `Release ${newTag}`);
 		await git.pushOrigin(newTag);
-		core.info(`✅ 标签已推送`);
-
-		// 验证标签同步
-		await verifyTagOnServer(newTag, giteaServer, giteaToken);
-		core.info(`✅ 标签已同步到服务器`);
+		core.info(`✅ 新标签: ${newTag}`);
 
 		// 触发工作流
-		const apiUrl = `${giteaServer}/api/v1/repos/base/sc-ui/actions/workflows/${encodeURIComponent(
-			workflowFile
-		)}/dispatches`;
-		await axios.post(
-			apiUrl,
+		const response = await axios.post(
+			`${giteaServer}/api/v1/repos/base/sc-ui/actions/workflows/${encodeURIComponent(
+				core.getInput("workflow-file")
+			)}/dispatches`,
 			{
 				ref: `refs/tags/${newTag}`,
 				inputs: { tag: newTag },
@@ -94,16 +52,15 @@ async function run() {
 					Authorization: `Bearer ${giteaToken}`,
 					"Content-Type": "application/json",
 				},
-				timeout: 15000,
 			}
 		);
 
 		core.setOutput("new-tag", newTag);
-		core.info("🎉 发布流程完成");
+		core.info(`🎉 成功触发工作流 (状态码: ${response.status})`);
 	} catch (error) {
-		core.setFailed(`❌ 发布失败: ${error.message}`);
+		core.setFailed(`💥 发布失败: ${error.message}`);
 		if (error.response) {
-			core.error(`API 错误: ${JSON.stringify(error.response.data)}`);
+			core.error(`服务端响应: ${JSON.stringify(error.response.data)}`);
 		}
 	}
 }

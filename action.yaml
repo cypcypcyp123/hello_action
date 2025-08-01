@@ -2,9 +2,6 @@ name: 'Version Publisher'
 description: 'Automated version tagging and workflow triggering'
 author: 'CYP'
 inputs:
-  version-type:
-    description: 'Type of version to publish (celeste/eclipse/equinox/main)'
-    required: true
   version-data:
     description: 'JSON version data (must contain version fields)'
     required: true
