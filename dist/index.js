@@ -4,65 +4,52 @@
 /***/ 1977:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-/* module decorator */ module = __nccwpck_require__.nmd(module);
-// ci_scripts/get-base-version.js
-const fs = __nccwpck_require__(9896);
-const path = __nccwpck_require__(6928);
 const { execSync } = __nccwpck_require__(5317);
 
 // 获取当前分支名
 function getCurrentBranch() {
-  return execSync("git rev-parse --abbrev-ref HEAD").toString().trim();
+	return execSync("git rev-parse --abbrev-ref HEAD").toString().trim();
 }
 
 // 从分支名提取模块名
-function extractModule(branchName) {
-  const versionMap = JSON.parse(fs.readFileSync("version-map.json", "utf8"));
+function extractModule(branchName, versionData) {
+	// 提取所有模块key（过滤非对象值）
+	const moduleKeys = Object.entries(versionData)
+		.filter(([key, value]) => typeof value === "object")
+		.map(([key]) => key);
 
-  // 提取所有模块key（过滤注释和非对象值）
-  const moduleKeys = Object.entries(versionMap)
-    .filter(([key, value]) => typeof value === "object" && !key.startsWith("//"))
-    .map(([key]) => key);
+	// 按匹配优先级排序（更长的key优先）
+	moduleKeys.sort((a, b) => b.length - a.length);
 
-  // 按匹配优先级排序
-  moduleKeys.sort((a, b) => b.length - a.length);
+	// 不区分大小写匹配
+	const matchedKey = moduleKeys.find((key) =>
+		new RegExp(key, "i").test(branchName)
+	);
 
-  // 不区分大小写匹配
-  const matchedKey = moduleKeys.find(key => new RegExp(key, "i").test(branchName));
+	if (!matchedKey) {
+		throw new Error(
+			`分支名 "${branchName}" 未包含有效模块名。可用模块: ${moduleKeys.join(
+				", "
+			)}`
+		);
+	}
 
-  if (!matchedKey) {
-    throw new Error(`分支名 "${branchName}" 未包含有效模块名。可用模块: ${moduleNames.join(", ")}`);
-  }
-
-  return matchedKey.toLowerCase(); // 统一返回小写key
-}
-
-// 获取模块版本
-function getVersion(moduleKey) {
-  const filePath = path.resolve(__dirname, "../version-map.json");
-  const versionMap = JSON.parse(fs.readFileSync(filePath, "utf8"));
-
-  const moduleData = versionMap[moduleKey.toLowerCase()];
-  if (!moduleData?.version) {
-    throw new Error(`模块 "${moduleKey}" 未在version-map.json中定义`);
-  }
-
-  return moduleData.version;
+	return matchedKey.toLowerCase(); // 统一返回小写key
 }
 
 // 主逻辑
-module.exports = () => {
-  try {
-    const branch = getCurrentBranch();
-    const moduleKey = extractModule(branch);
-    const version = getVersion(moduleKey);
+module.exports = (versionData) => {
+	try {
+		const branch = getCurrentBranch();
+		const moduleKey = extractModule(branch, versionData);
+		const version = versionData[moduleKey].version;
 
-    console.log(`分支: ${branch} → 模块: ${module} → 版本: ${version}`);
-    return version;
-  } catch (error) {
-    console.error("[Error]", error.message);
-    process.exit(1);
-  }
+		console.log(`分支: ${branch} → 模块: ${moduleKey} → 版本: ${version}`);
+		return version;
+	} catch (error) {
+		console.error("[Error]", error.message);
+		process.exit(1);
+	}
 };
 
 
@@ -41988,8 +41975,8 @@ module.exports = /*#__PURE__*/JSON.parse('{"application/1d-interleaved-parityfec
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			id: moduleId,
-/******/ 			loaded: false,
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};
 /******/ 	
@@ -42002,23 +41989,11 @@ module.exports = /*#__PURE__*/JSON.parse('{"application/1d-interleaved-parityfec
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
 /******/ 		}
 /******/ 	
-/******/ 		// Flag the module as loaded
-/******/ 		module.loaded = true;
-/******/ 	
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
 /******/ 	}
 /******/ 	
 /************************************************************************/
-/******/ 	/* webpack/runtime/node module decorator */
-/******/ 	(() => {
-/******/ 		__nccwpck_require__.nmd = (module) => {
-/******/ 			module.paths = [];
-/******/ 			if (!module.children) module.children = [];
-/******/ 			return module;
-/******/ 		};
-/******/ 	})();
-/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
