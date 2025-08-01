@@ -1,0 +1,6 @@
+name: 'Hello Action'
+description: 'Print a hello message'
+author: 'CYP'
+runs:
+  using: 'node20'
+  main: 'index.js'  # 直接运行 index.js（无需编译）
