@@ -6,48 +6,41 @@
 
 const { execSync } = __nccwpck_require__(5317);
 
-// 获取当前分支名
 function getCurrentBranch() {
 	return execSync("git rev-parse --abbrev-ref HEAD").toString().trim();
 }
 
-// 从分支名提取模块名
 function extractModule(branchName, versionData) {
-	// 提取所有模块key（过滤非对象值）
-	const moduleKeys = Object.entries(versionData)
-		.filter(([key, value]) => typeof value === "object")
-		.map(([key]) => key);
+	const moduleKeys = Object.keys(versionData)
+		.filter((key) => typeof versionData[key] === "object")
+		.sort((a, b) => b.length - a.length);
 
-	// 按匹配优先级排序（更长的key优先）
-	moduleKeys.sort((a, b) => b.length - a.length);
-
-	// 不区分大小写匹配
 	const matchedKey = moduleKeys.find((key) =>
 		new RegExp(key, "i").test(branchName)
 	);
 
 	if (!matchedKey) {
 		throw new Error(
-			`分支名 "${branchName}" 未包含有效模块名。可用模块: ${moduleKeys.join(
-				", "
-			)}`
+			`无法匹配模块: ${branchName} (可用: ${moduleKeys.join(", ")})`
 		);
 	}
 
-	return matchedKey.toLowerCase(); // 统一返回小写key
+	return matchedKey.toLowerCase();
 }
 
-// 主逻辑
 module.exports = (versionData) => {
 	try {
 		const branch = getCurrentBranch();
 		const moduleKey = extractModule(branch, versionData);
 		const version = versionData[moduleKey].version;
 
-		console.log(`分支: ${branch} → 模块: ${moduleKey} → 版本: ${version}`);
+		if (!version) {
+			throw new Error(`模块 ${moduleKey} 缺少 version 字段`);
+		}
+
 		return version;
 	} catch (error) {
-		console.error("[Error]", error.message);
+		console.error("[ERROR]", error.message);
 		process.exit(1);
 	}
 };
@@ -42005,6 +41998,7 @@ const axios = __nccwpck_require__(7269);
 const simpleGit = __nccwpck_require__(9065);
 const getBaseVersion = __nccwpck_require__(1977);
 
+// 计算新标签
 async function calculateTag(baseVersion, versionType) {
 	const git = simpleGit();
 	const tags = await git.tags();
@@ -42018,6 +42012,7 @@ async function calculateTag(baseVersion, versionType) {
 	return `${baseVersion}-${versionType}.${matchedTags[0] + 1 || 1}`;
 }
 
+// 验证标签是否同步到服务器
 async function verifyTagOnServer(
 	tagName,
 	giteaServer,
@@ -42034,19 +42029,14 @@ async function verifyTagOnServer(
 				headers: { Authorization: `Bearer ${giteaToken}` },
 				timeout: 5000,
 			});
-			core.info(`✅ Tag verified (attempt ${attempt}/${maxAttempts})`);
 			return true;
 		} catch (error) {
 			if (attempt < maxAttempts) {
 				const delay = Math.pow(2, attempt) * 1000;
-				core.info(
-					`🔄 Tag not synced, waiting ${delay}ms (${attempt}/${maxAttempts})`
-				);
+				core.info(`🔄 等待标签同步 (${delay}ms)`);
 				await new Promise((resolve) => setTimeout(resolve, delay));
 			} else {
-				throw new Error(
-					`Tag ${tagName} not synced after ${maxAttempts} attempts`
-				);
+				throw new Error(`标签同步失败: ${error.message}`);
 			}
 		}
 	}
@@ -42054,38 +42044,40 @@ async function verifyTagOnServer(
 
 async function run() {
 	try {
-		// Get inputs
+		// 获取所有输入
 		const versionType = core.getInput("version-type");
 		const giteaToken = core.getInput("GITEA_TOKEN");
 		const giteaServer = core.getInput("GITEA_SERVER");
 		const workflowFile = core.getInput("workflow-file");
 
-		core.startGroup("🚀 Starting publish process");
+		// 解析版本数据
+		const versionData = JSON.parse(core.getInput("version-data"));
+		if (!versionData[versionType]) {
+			throw new Error(`版本类型 ${versionType} 不存在于输入数据`);
+		}
 
-		// 1. Get base version
-		const baseVersion = getBaseVersion();
-		core.info(`✅ Base version: ${baseVersion}`);
+		// 获取基础版本
+		const baseVersion = getBaseVersion(versionData);
+		core.info(`✅ 基础版本: ${baseVersion}`);
 
-		// 2. Calculate new tag
+		// 计算新标签
 		const newTag = await calculateTag(baseVersion, versionType);
-		core.info(`✅ New tag: ${newTag}`);
+		core.info(`✅ 新标签: ${newTag}`);
 
-		// 3. Create and push tag
+		// 创建并推送标签
 		const git = simpleGit();
 		await git.addAnnotatedTag(newTag, `Release ${newTag}`);
-		await git.push("origin", newTag);
-		core.info(`✅ Tag created and pushed`);
+		await git.pushOrigin(newTag);
+		core.info(`✅ 标签已推送`);
 
-		// 4. Verify tag on server
+		// 验证标签同步
 		await verifyTagOnServer(newTag, giteaServer, giteaToken);
-		core.info(`✅ Tag verified on server`);
+		core.info(`✅ 标签已同步到服务器`);
 
-		// 5. Trigger workflow
+		// 触发工作流
 		const apiUrl = `${giteaServer}/api/v1/repos/base/sc-ui/actions/workflows/${encodeURIComponent(
 			workflowFile
 		)}/dispatches`;
-
-		core.info(`⚡ Triggering workflow: ${workflowFile}`);
 		await axios.post(
 			apiUrl,
 			{
@@ -42101,17 +42093,12 @@ async function run() {
 			}
 		);
 
-		core.info("🎉 Publish process completed successfully");
 		core.setOutput("new-tag", newTag);
-		core.endGroup();
+		core.info("🎉 发布流程完成");
 	} catch (error) {
-		core.setFailed(`❌ Publish failed: ${error.message}`);
+		core.setFailed(`❌ 发布失败: ${error.message}`);
 		if (error.response) {
-			core.error(
-				`API Error: ${error.response.status} - ${JSON.stringify(
-					error.response.data
-				)}`
-			);
+			core.error(`API 错误: ${JSON.stringify(error.response.data)}`);
 		}
 	}
 }
