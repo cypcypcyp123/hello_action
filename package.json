@@ -1,5 +1,5 @@
 {
-	"name": "hello-action",
+	"name": "one-key-publish-action",
 	"version": "1.0.0",
 	"main": "index.js",
 	"scripts": {
@@ -7,7 +7,9 @@
 		"test": "echo \"No tests yet\""
 	},
 	"dependencies": {
-		"@actions/core": "^1.10.0"
+		"@actions/core": "^1.10.0",
+		"axios": "^1.6.2",
+		"simple-git": "^3.18.0"
 	},
 	"devDependencies": {
 		"@vercel/ncc": "^0.38.0"

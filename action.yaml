@@ -1,6 +1,20 @@
-name: 'Hello Action'
-description: 'Print a hello message'
+name: 'One Key Publish Action'
+description: 'Automated version tagging and workflow triggering'
 author: 'CYP'
+inputs:
+  version-type:
+    description: 'Type of version to publish (celeste/eclipse/equinox/main)'
+    required: true
+  GITEA_TOKEN:
+    description: 'Token for Gitea API access'
+    required: true
+  GITEA_SERVER:
+    description: 'Gitea server URL'
+    required: true
+  workflow-file:
+    description: 'Workflow file to trigger'
+    required: true
+    default: '📦amd64版本发布.yaml'
 runs:
   using: 'node20'
-  main: 'index.js'  # 直接运行 index.js（无需编译）
+  main: 'dist/index.js'
