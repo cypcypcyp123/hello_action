@@ -2,8 +2,8 @@ name: 'One Key Publish Action'
 description: 'Automated version tagging and workflow triggering'
 author: 'CYP'
 inputs:
-  version-type:
-    description: 'Type of version to publish (celeste/eclipse/equinox/main)'
+  version-data:
+    description: 'JSON data containing version information'
     required: true
   GITEA_TOKEN:
     description: 'Token for Gitea API access'
